@@ -1,0 +1,465 @@
+ 
+ 1          OPTIONS NONOTES NOSTIMER NOSOURCE NOSYNTAXCHECK;
+ 68         
+ 69         /* open library for data retention (i.e. Free SAS studio online do not allow user create library)*/
+ 70         /*libname budget '/pbr/sfw/sas/940/SASFoundation/9.4/';*/
+ 71         
+ 72         /*Generate mapping table*/
+ 73         data map_dept;
+ 74         infile datalines delimiter=',';
+ 75         length dept $15. dept_loc $9.;
+ 76         input dept $ dept_loc $;
+ 77         datalines;
+ 
+ NOTE: The data set WORK.MAP_DEPT has 4 observations and 2 variables.
+ NOTE: DATA statement used (Total process time):
+       real time           0.00 seconds
+       user cpu time       0.00 seconds
+       system cpu time     0.00 seconds
+       memory              779.28k
+       OS Memory           24996.00k
+       Timestamp           06/22/2022 06:17:00 PM
+       Step Count                        206  Switch Count  2
+       Page Faults                       0
+       Page Reclaims                     160
+       Page Swaps                        0
+       Voluntary Context Switches        12
+       Involuntary Context Switches      0
+       Block Input Operations            0
+       Block Output Operations           264
+       
+ 
+ 82         ;
+ 83         run;
+ 84         
+ 85         data map_dept;
+ 86         set map_dept;
+ 87         dept=strip(dept);
+ 88         dept_loc=strip(dept_loc);
+ 89         run;
+ 
+ NOTE: There were 4 observations read from the data set WORK.MAP_DEPT.
+ NOTE: The data set WORK.MAP_DEPT has 4 observations and 2 variables.
+ NOTE: DATA statement used (Total process time):
+       real time           0.00 seconds
+       user cpu time       0.00 seconds
+       system cpu time     0.00 seconds
+       memory              1055.15k
+       OS Memory           25256.00k
+       Timestamp           06/22/2022 06:17:00 PM
+       Step Count                        207  Switch Count  2
+       Page Faults                       0
+       Page Reclaims                     134
+       Page Swaps                        0
+       Voluntary Context Switches        10
+       Involuntary Context Switches      0
+       Block Input Operations            0
+       Block Output Operations           264
+       
+ 
+ 90         
+ 91         /*Create 2 months dummy data*/
+ 92         data STPBGT_20220531;
+ 93         set STPSAMP.STPBGT;
+ 94         run;
+ 
+ NOTE: There were 32 observations read from the data set STPSAMP.STPBGT.
+ NOTE: The data set WORK.STPBGT_20220531 has 32 observations and 5 variables.
+ NOTE: DATA statement used (Total process time):
+       real time           0.00 seconds
+       user cpu time       0.00 seconds
+       system cpu time     0.00 seconds
+       memory              943.90k
+       OS Memory           24996.00k
+       Timestamp           06/22/2022 06:17:00 PM
+       Step Count                        208  Switch Count  2
+       Page Faults                       0
+       Page Reclaims                     94
+       Page Swaps                        0
+       Voluntary Context Switches        9
+       Involuntary Context Switches      0
+       Block Input Operations            0
+       Block Output Operations           264
+       
+ 
+ 95         data STPBGT_20220630;
+ 96         set STPSAMP.STPBGT;
+ 97         budget = budget * 1.2;
+ 98         Actual = actual * 1.3;
+ 99         run;
+ 
+ NOTE: There were 32 observations read from the data set STPSAMP.STPBGT.
+ NOTE: The data set WORK.STPBGT_20220630 has 32 observations and 5 variables.
+ NOTE: DATA statement used (Total process time):
+       real time           0.00 seconds
+       user cpu time       0.00 seconds
+       system cpu time     0.00 seconds
+       memory              906.25k
+       OS Memory           24996.00k
+       Timestamp           06/22/2022 06:17:00 PM
+       Step Count                        209  Switch Count  2
+       Page Faults                       0
+       Page Reclaims                     90
+       Page Swaps                        0
+       Voluntary Context Switches        9
+       Involuntary Context Switches      0
+       Block Input Operations            0
+       Block Output Operations           264
+       
+ 
+ 100        
+ 101        /*Create empty dataset*/
+ 102        data /*Budget.*/cal_budget_sum;
+ 103        set _null_;
+ 104        Run;
+ 
+ NOTE: The data set WORK.CAL_BUDGET_SUM has 0 observations and 0 variables.
+ NOTE: DATA statement used (Total process time):
+       real time           0.00 seconds
+       user cpu time       0.01 seconds
+       system cpu time     0.00 seconds
+       memory              670.43k
+       OS Memory           24736.00k
+       Timestamp           06/22/2022 06:17:00 PM
+       Step Count                        210  Switch Count  2
+       Page Faults                       0
+       Page Reclaims                     24
+       Page Swaps                        0
+       Voluntary Context Switches        12
+       Involuntary Context Switches      0
+       Block Input Operations            0
+       Block Output Operations           160
+       
+ 
+ 105        
+ 106        %macro loop_mth (mdate,fdate);
+ 107        /*SAS default library for demo*/
+ 108        
+ 109        data cal_budget;
+ 110        format dept2 $15.;
+ 111        set STPBGT_&fdate.;
+ 112        dept2=strip(dept);
+ 113        drop dept;
+ 114        rename dept2 = dept;
+ 115        Run;
+ 116        
+ 117        proc sort data=cal_budget;
+ 118        by DEPT;
+ 119        Run;
+ 120        
+ 121        proc sort data=map_dept;
+ 122        by DEPT;
+ 123        Run;
+ 124        
+ 125        data cal_budget_m;
+ 126        merge cal_budget(in=a) map_dept(in=b);
+ 127        by DEPT;
+ 128        if a;
+ 129        Run;
+ 130        
+ 131        /*Group by dept*/
+ 132        proc summary data=cal_budget_m missing;
+ 133        class dept;
+ 134        var budget actual;
+ 135           output out=cal_budget_sum_t (drop=_type_ _freq_) sum= ;
+ 136        run;
+ 137        
+ 138        data cal_budget_sum_t;
+ 139        format bud_date mmddyy10.;
+ 140        set cal_budget_sum_t;
+ 141        bud_date=&mdate.;
+ 142        Run;
+ 143        
+ 144        data /*budget.*/cal_budget_sum;
+ 145        set /*3budget.*/cal_budget_sum cal_budget_sum_t;
+ 146        run;
+ 147        %mend;
+ 148        
+ 149        %loop_mth('31MAY2022'd,20220531);
+ 
+ NOTE: There were 32 observations read from the data set WORK.STPBGT_20220531.
+ NOTE: The data set WORK.CAL_BUDGET has 32 observations and 5 variables.
+ NOTE: DATA statement used (Total process time):
+       real time           0.00 seconds
+       user cpu time       0.00 seconds
+       system cpu time     0.00 seconds
+       memory              947.37k
+       OS Memory           25256.00k
+       Timestamp           06/22/2022 06:17:00 PM
+       Step Count                        211  Switch Count  2
+       Page Faults                       0
+       Page Reclaims                     123
+       Page Swaps                        0
+       Voluntary Context Switches        11
+       Involuntary Context Switches      0
+       Block Input Operations            0
+       Block Output Operations           264
+       
+ 
+ 
+ NOTE: There were 32 observations read from the data set WORK.CAL_BUDGET.
+ NOTE: The data set WORK.CAL_BUDGET has 32 observations and 5 variables.
+ NOTE: PROCEDURE SORT used (Total process time):
+       real time           0.00 seconds
+       user cpu time       0.00 seconds
+       system cpu time     0.00 seconds
+       memory              930.28k
+       OS Memory           25256.00k
+       Timestamp           06/22/2022 06:17:00 PM
+       Step Count                        212  Switch Count  2
+       Page Faults                       0
+       Page Reclaims                     115
+       Page Swaps                        0
+       Voluntary Context Switches        11
+       Involuntary Context Switches      0
+       Block Input Operations            0
+       Block Output Operations           264
+       
+ 
+ 
+ NOTE: There were 4 observations read from the data set WORK.MAP_DEPT.
+ NOTE: The data set WORK.MAP_DEPT has 4 observations and 2 variables.
+ NOTE: PROCEDURE SORT used (Total process time):
+       real time           0.00 seconds
+       user cpu time       0.00 seconds
+       system cpu time     0.00 seconds
+       memory              933.78k
+       OS Memory           25256.00k
+       Timestamp           06/22/2022 06:17:00 PM
+       Step Count                        213  Switch Count  2
+       Page Faults                       0
+       Page Reclaims                     113
+       Page Swaps                        0
+       Voluntary Context Switches        14
+       Involuntary Context Switches      0
+       Block Input Operations            0
+       Block Output Operations           264
+       
+ 
+ 
+ NOTE: There were 32 observations read from the data set WORK.CAL_BUDGET.
+ NOTE: There were 4 observations read from the data set WORK.MAP_DEPT.
+ NOTE: The data set WORK.CAL_BUDGET_M has 32 observations and 6 variables.
+ NOTE: DATA statement used (Total process time):
+       real time           0.00 seconds
+       user cpu time       0.01 seconds
+       system cpu time     0.00 seconds
+       memory              1394.46k
+       OS Memory           25516.00k
+       Timestamp           06/22/2022 06:17:00 PM
+       Step Count                        214  Switch Count  2
+       Page Faults                       0
+       Page Reclaims                     172
+       Page Swaps                        0
+       Voluntary Context Switches        12
+       Involuntary Context Switches      0
+       Block Input Operations            0
+       Block Output Operations           264
+       
+ 
+ 
+ NOTE: There were 32 observations read from the data set WORK.CAL_BUDGET_M.
+ NOTE: The data set WORK.CAL_BUDGET_SUM_T has 6 observations and 3 variables.
+ NOTE: PROCEDURE SUMMARY used (Total process time):
+       real time           0.00 seconds
+       user cpu time       0.00 seconds
+       system cpu time     0.01 seconds
+       memory              7934.81k
+       OS Memory           32188.00k
+       Timestamp           06/22/2022 06:17:00 PM
+       Step Count                        215  Switch Count  3
+       Page Faults                       0
+       Page Reclaims                     1820
+       Page Swaps                        0
+       Voluntary Context Switches        23
+       Involuntary Context Switches      0
+       Block Input Operations            0
+       Block Output Operations           272
+       
+ 
+ 
+ NOTE: There were 6 observations read from the data set WORK.CAL_BUDGET_SUM_T.
+ NOTE: The data set WORK.CAL_BUDGET_SUM_T has 6 observations and 4 variables.
+ NOTE: DATA statement used (Total process time):
+       real time           0.00 seconds
+       user cpu time       0.00 seconds
+       system cpu time     0.00 seconds
+       memory              943.03k
+       OS Memory           26536.00k
+       Timestamp           06/22/2022 06:17:00 PM
+       Step Count                        216  Switch Count  2
+       Page Faults                       0
+       Page Reclaims                     122
+       Page Swaps                        0
+       Voluntary Context Switches        9
+       Involuntary Context Switches      0
+       Block Input Operations            0
+       Block Output Operations           264
+       
+ 
+ 
+ NOTE: There were 0 observations read from the data set WORK.CAL_BUDGET_SUM.
+ NOTE: There were 6 observations read from the data set WORK.CAL_BUDGET_SUM_T.
+ NOTE: The data set WORK.CAL_BUDGET_SUM has 6 observations and 4 variables.
+ NOTE: DATA statement used (Total process time):
+       real time           0.00 seconds
+       user cpu time       0.01 seconds
+       system cpu time     0.00 seconds
+       memory              1188.78k
+       OS Memory           26536.00k
+       Timestamp           06/22/2022 06:17:00 PM
+       Step Count                        217  Switch Count  2
+       Page Faults                       0
+       Page Reclaims                     123
+       Page Swaps                        0
+       Voluntary Context Switches        14
+       Involuntary Context Switches      0
+       Block Input Operations            0
+       Block Output Operations           264
+       
+ 
+ 150        %loop_mth('30Jun2022'd,20220630);
+ 
+ NOTE: There were 32 observations read from the data set WORK.STPBGT_20220630.
+ NOTE: The data set WORK.CAL_BUDGET has 32 observations and 5 variables.
+ NOTE: DATA statement used (Total process time):
+       real time           0.00 seconds
+       user cpu time       0.00 seconds
+       system cpu time     0.00 seconds
+       memory              946.06k
+       OS Memory           26536.00k
+       Timestamp           06/22/2022 06:17:00 PM
+       Step Count                        218  Switch Count  2
+       Page Faults                       0
+       Page Reclaims                     122
+       Page Swaps                        0
+       Voluntary Context Switches        14
+       Involuntary Context Switches      0
+       Block Input Operations            0
+       Block Output Operations           264
+       
+ 
+ 
+ NOTE: There were 32 observations read from the data set WORK.CAL_BUDGET.
+ NOTE: The data set WORK.CAL_BUDGET has 32 observations and 5 variables.
+ NOTE: PROCEDURE SORT used (Total process time):
+       real time           0.00 seconds
+       user cpu time       0.00 seconds
+       system cpu time     0.00 seconds
+       memory              930.28k
+       OS Memory           26536.00k
+       Timestamp           06/22/2022 06:17:00 PM
+       Step Count                        219  Switch Count  2
+       Page Faults                       0
+       Page Reclaims                     113
+       Page Swaps                        0
+       Voluntary Context Switches        9
+       Involuntary Context Switches      0
+       Block Input Operations            0
+       Block Output Operations           264
+       
+ 
+ 
+ NOTE: Input data set is already sorted, no sorting done.
+ NOTE: PROCEDURE SORT used (Total process time):
+       real time           0.00 seconds
+       user cpu time       0.00 seconds
+       system cpu time     0.00 seconds
+       memory              536.71k
+       OS Memory           26276.00k
+       Timestamp           06/22/2022 06:17:00 PM
+       Step Count                        220  Switch Count  0
+       Page Faults                       0
+       Page Reclaims                     49
+       Page Swaps                        0
+       Voluntary Context Switches        0
+       Involuntary Context Switches      0
+       Block Input Operations            0
+       Block Output Operations           0
+       
+ 
+ 
+ NOTE: There were 32 observations read from the data set WORK.CAL_BUDGET.
+ NOTE: There were 4 observations read from the data set WORK.MAP_DEPT.
+ NOTE: The data set WORK.CAL_BUDGET_M has 32 observations and 6 variables.
+ NOTE: DATA statement used (Total process time):
+       real time           0.00 seconds
+       user cpu time       0.00 seconds
+       system cpu time     0.00 seconds
+       memory              1394.46k
+       OS Memory           26796.00k
+       Timestamp           06/22/2022 06:17:00 PM
+       Step Count                        221  Switch Count  2
+       Page Faults                       0
+       Page Reclaims                     158
+       Page Swaps                        0
+       Voluntary Context Switches        11
+       Involuntary Context Switches      0
+       Block Input Operations            0
+       Block Output Operations           264
+       
+ 
+ 
+ NOTE: There were 32 observations read from the data set WORK.CAL_BUDGET_M.
+ NOTE: The data set WORK.CAL_BUDGET_SUM_T has 6 observations and 3 variables.
+ NOTE: PROCEDURE SUMMARY used (Total process time):
+       real time           0.00 seconds
+       user cpu time       0.01 seconds
+       system cpu time     0.01 seconds
+       memory              7822.84k
+       OS Memory           32188.00k
+       Timestamp           06/22/2022 06:17:00 PM
+       Step Count                        222  Switch Count  3
+       Page Faults                       0
+       Page Reclaims                     1508
+       Page Swaps                        0
+       Voluntary Context Switches        20
+       Involuntary Context Switches      0
+       Block Input Operations            0
+       Block Output Operations           264
+       
+ 
+ 
+ NOTE: There were 6 observations read from the data set WORK.CAL_BUDGET_SUM_T.
+ NOTE: The data set WORK.CAL_BUDGET_SUM_T has 6 observations and 4 variables.
+ NOTE: DATA statement used (Total process time):
+       real time           0.00 seconds
+       user cpu time       0.00 seconds
+       system cpu time     0.00 seconds
+       memory              943.03k
+       OS Memory           26536.00k
+       Timestamp           06/22/2022 06:17:00 PM
+       Step Count                        223  Switch Count  2
+       Page Faults                       0
+       Page Reclaims                     122
+       Page Swaps                        0
+       Voluntary Context Switches        9
+       Involuntary Context Switches      0
+       Block Input Operations            0
+       Block Output Operations           264
+       
+ 
+ 
+ NOTE: There were 6 observations read from the data set WORK.CAL_BUDGET_SUM.
+ NOTE: There were 6 observations read from the data set WORK.CAL_BUDGET_SUM_T.
+ NOTE: The data set WORK.CAL_BUDGET_SUM has 12 observations and 4 variables.
+ NOTE: DATA statement used (Total process time):
+       real time           0.00 seconds
+       user cpu time       0.00 seconds
+       system cpu time     0.00 seconds
+       memory              1282.81k
+       OS Memory           26796.00k
+       Timestamp           06/22/2022 06:17:01 PM
+       Step Count                        224  Switch Count  2
+       Page Faults                       0
+       Page Reclaims                     156
+       Page Swaps                        0
+       Voluntary Context Switches        9
+       Involuntary Context Switches      0
+       Block Input Operations            0
+       Block Output Operations           264
+       
+ 
+ 151        
+ 152        OPTIONS NONOTES NOSTIMER NOSOURCE NOSYNTAXCHECK;
+ 162        
