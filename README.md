@@ -15,6 +15,8 @@ SAS:
 1.	SAS Demo on data handling
 Using SAS studio free to create a demo on data handling and cleaning.  (https://www.sas.com/en_us/software/on-demand-for-academics.html)
 Perform general merging of datasets and loop by periods.
+2. SAS Demo on mortgage portfolio report
+Demo of previous work experience
 
 VBA:
 1.	VBA test for interviewee
