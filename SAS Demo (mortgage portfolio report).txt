@@ -1,0 +1,1587 @@
+options ps=max ls=max obs=max nocenter nodate nonumber missing=0;
+
+%let yymm=2206;
+
+/* %let Prime=0.0525;
+Prime :
+Jan08 => 6.25%
+Feb08 => 6%
+Mar08~Oct08 => 5.5%
+Nov08~present => 5.25%
+*/
+
+/*** formatting ***/
+proc format;
+value $Region  
+'HK'='Hong Kong'
+'KW'='Kowloon'
+'NT'='New Territories'
+'Miss'='Missing';
+
+Value OLT
+0 - 60 ='a.5.0 Years or Less'
+61-120 ='b.5.1 - 10.0 Years'
+121 - 180 ='c.10.1 - 15.0 Years'
+181 - 240 ='d.15.1 - 20.0 Years'
+241 - 300 ='e.20.1 - 25.0 Years'
+301 - high ='f.25.1 - 30.0 Years';
+
+Value RLT
+0-12='a.1.0 Year or Less'
+13-36='b.1.1 - 3.0 Years'
+37-60='c.3.1 - 5.0 Years'
+61-120 ='d.5.1 - 10.0 Years'
+121 - 180 ='e.10.1 - 15.0 Years'
+181 - 240 ='f.15.1 - 20.0 Years'
+241 - 300 ='g.20.1 - 25.0 Years'
+301 - High ='h.25.1 - 30.0 Years';
+
+Value DSR
+. ='j.Missing'
+0='j.Missing'
+1-3000 ='a.0.1% to 30.0%'
+3001-3500='b.30.1% to 35.0%'
+3501-4000='c.35.1% to 40.0%'
+4001-4500='d.40.1% to 45.0%'
+4501-5000='e.45.1% to 50.0%'
+5001-5500='f.50.1% to 55.0%'
+5501-6000='g.55.1% to 60.0%'
+6001-6500='h.60.1% to 65.0%'
+6501-high='i.Above 65.0%';
+
+Value OLTV
+. ='l.Missing'
+0='l.Missing'
+1-5000 ='a.0.1% to 50.0%'
+5001-5500='b.50.1% to 55.0%'
+5501-6000='c.55.1% to 60.0%'
+6001-6500='d.60.1% to 65.0%'
+6501-7000='e.65.1% to 70.0%'
+7001-7500='f.70.1% to 75.0%'
+7501-8000='g.75.1% to 80.0%'
+8001-8500='h.80.1% to 85.0%'
+8501-9000='i.85.1% to 90.0%'
+9001-9500='j.90.1% to 95.0%'
+9501-9999='k.Above 95%';
+
+
+
+/********** Main Program **********/
+proc freq data=mtg.mort&yymm.;
+table loan_group loan_sub_group;
+title "Summary @&yymm.";
+run;
+
+data mtg;
+set mtg.mort&yymm.;
+if loan_group in ('a.Consumer Banking','b.Non-Consumer Banking');
+
+os=OS_Prin/100000000;
+Del30=Del30_Amt/100000000;
+Del90=Del90_Amt/100000000;
+NPL=NPL_Amt/100000000;
+
+os_p=OS_Prin/100;
+orig_adv=original_loan_amt/100;
+orig_cmv=Secured_Value/100;
+orig_tenor=no_installment;
+os_tenor=os_instal_no;
+dsr=Debt_S_Ratio/100;
+gross_rate=interest_rate/1000000;
+OS_x_gross=OS_Prin*gross_rate;
+orig_ltv=(orig_adv/orig_cmv)*100;
+
+format hil_key seq_no $8.;
+if index(upcase(rel_account3),'@L')
+then hil_key=compress(upcase(rel_account3),'ABCDEFGHIJKLMNOPQRSTUVWXYZ@ ');
+else if index(upcase(rel_account3),'@')
+then seq_no=compress(upcase(rel_account3),'ABCDEFGHIJKLMNOPQRSTUVWXYZ@ ');
+
+format gp0 gp gp_h1 gp_h2 $10.;
+ if Loan_sub_Group in ('a.Consumer Banking - RML (HKMA)','b.Consumer Banking - Other RML') 
+ then gp0='cf-rml';
+if gp0='cf-rml' then do;
+  if MIP_Ind='Y' then gp='1.mip';
+  else if substr(upcase(rel_account3),1,5)='RBPC@' then gp='2.rbp';
+  else if business_code in ('8041','8042') then gp='3.scheme';
+  else if Loan_Scheme not in ('a.Generic Mortgage Loan','h.Co-Financing with Developer') 
+  then gp='3.scheme';
+  else gp='4.normal';
+end;
+else if Loan_sub_Group='c.Consumer Banking - Non RML' then do;
+  if substr(upcase(rel_account3),1,5)='RBPC@' then gp='5.rbp';
+  else gp='6.non-rbp';
+end;
+else if Loan_sub_Group in ('d.Non Consumer Banking - RML (HKMA)','e.Non Consumer Banking - Other RML') 
+then gp='7.rml';
+else gp='8.non-rml';
+
+if gp in ('5.rbp','6.non-rbp','8.non-rml') then gp_h1='3.non-rml';
+else if gp='2.rbp' then gp_h1='2.rml-rbp';
+else if gp in ('1.mip','3.scheme','4.normal','7.rml') then gp_h1='1.rml-con';
+
+if gp in ('2.rbp','5.rbp') then gp_h2='2.rml-rbp';
+else if gp in ('1.mip','3.scheme','4.normal','6.non-rbp','7.rml','8.non-rml') 
+then gp_h2='1.rml-con';
+
+
+*Re-group;
+format my_prop $20.;
+if Village_House_ind=1 then my_prop='a.Village House';
+else if Cat_code='R' then my_prop='b.Residential';
+else if Cat_code='A' then my_prop='c.Res+Car Park';
+else if Cat_code='P' then my_prop='d.Car Park';
+else if Cat_code in ('C','E','B','O','S') then my_prop='e.Commericial';
+else if Cat_code in ('I','F','D') then my_prop='f.Industrial';
+else my_prop=cat_code;
+
+format my_draw $15.;
+if substr(Drawdown_date,1,4)<=1996 then my_draw='1996 or before';
+else my_draw=substr(Drawdown_date,1,4);
+
+format my_price $30.;
+if upcase(Rate_type)='V' then do;
+  if hibor_spread_rate/1000000<0.7 then my_price='ha.<H+0.7';
+  else if hibor_spread_rate/1000000<=1 then my_price='hb.>=H+0.7 to <=H+1';
+  else my_price='hc.>H+1';
+end;
+else if Rate_Code='06' then my_price='x.non prime/hibor';
+else if Rate_Code='02' and substr(Rate_Margin,8,1)='P' then do;
+  if Rate_Margin='0000000P' then my_price='ph.Prime or Above';
+  else if put(substr(Rate_Margin,1,7),7.)/10000000>0.030 then my_price='pa.Below P-3.00%';
+  else if put(substr(Rate_Margin,1,7),7.)/10000000>0.0275 then my_price='pb.P-3.00% -< P-2.75%';
+  else if put(substr(Rate_Margin,1,7),7.)/10000000>0.025 then my_price='pc.P-2.75% -< P-2.50%';
+  else if put(substr(Rate_Margin,1,7),7.)/10000000>0.0225 then my_price='pd.P-2.50% -< P-2.25%';
+  else if put(substr(Rate_Margin,1,7),7.)/10000000>0.020 then my_price='pe.P-2.25% -< P-2.00%';
+  else if put(substr(Rate_Margin,1,7),7.)/10000000>0.010 then my_price='pf.P-2.00% -< P-1.00%';
+  else if put(substr(Rate_Margin,1,7),7.)/10000000>0.00 then my_price='pg.P-1.00% -< Prime Flat';
+  else my_price='Error';
+end;
+else if Rate_Code='02' and substr(Rate_Margin,8,1)^='P' then my_price='ph.Prime or Above';
+
+format my_orig_cmv my_orig_adv my_os_p my_oltv $20.;
+if orig_cmv<=1000000 then my_orig_cmv='a.<=1M';
+else if orig_cmv<=2000000 then my_orig_cmv='b. >1M to <=2M';
+else if orig_cmv<=3000000 then my_orig_cmv='c. >2M to <=3M';
+else if orig_cmv<=4000000 then my_orig_cmv='d. >3M to <=4M';
+else if orig_cmv<=6000000 then my_orig_cmv='e. >4M to <=6M';
+else if orig_cmv<=8000000 then my_orig_cmv='f. >6M to <=8M';
+else if orig_cmv<=10000000 then my_orig_cmv='g. >8M to <=10M';
+else if orig_cmv<=12000000 then my_orig_cmv='h. >10M to <=12M';
+else if orig_cmv<=15000000 then my_orig_cmv='i. >12M to <=15M';
+else if orig_cmv<=20000000 then my_orig_cmv='j. >15M to <=20M';
+else my_orig_cmv='k. >20M';
+
+if orig_adv<=1000000 then my_orig_adv='a.<=1M';
+else if orig_adv<=2000000 then my_orig_adv='b. >1M to <=2M';
+else if orig_adv<=3000000 then my_orig_adv='c. >2M to <=3M';
+else if orig_adv<=4000000 then my_orig_adv='d. >3M to <=4M';
+else if orig_adv<=6000000 then my_orig_adv='e. >4M to <=6M';
+else if orig_adv<=8000000 then my_orig_adv='f. >6M to <=8M';
+else if orig_adv<=10000000 then my_orig_adv='g. >8M to <=10M';
+else my_orig_adv='h. >10M';
+
+if os_p<=500000 then my_os_p='a.<=0.5M';
+else if os_p<=1000000 then my_os_p='b. >0.5M to <=1M';
+else if os_p<=2000000 then my_os_p='c. >1M to <=2M';
+else if os_p<=3000000 then my_os_p='d. >2M to <=3M';
+else if os_p<=4000000 then my_os_p='e. >3M to <=4M';
+else if os_p<=5000000 then my_os_p='f. >4M to <=5M';
+else if os_p<=10000000 then my_os_p='g. >5M to <=10M';
+else my_os_p='h. >10M';
+
+if orig_ltv<41 then my_oltv='a.0.1% to 40%';
+else if orig_ltv<51 then my_oltv='b.41% to 50%';
+else if orig_ltv<61 then my_oltv='c.51% to 60%';
+else if orig_ltv<71 then my_oltv='d.61% to 70%';
+else if orig_ltv<81 then my_oltv='e.71% to 80%';
+else if orig_ltv<91 then my_oltv='f.81% to 90%';
+else my_oltv='g.>=91%';
+run;
+data missing;	
+set mtg;
+if orig_cmv<=0;		*checking;
+run;
+
+%macro pt(aa);
+proc tabulate data=mtg missing;
+class gp &aa.;
+table (&aa. all), (gp all)*n*f=comma9. /rts=17. printmiss;
+title "HL @&yymm.";
+run;
+%mend pt;
+%pt(loan_scheme)
+%pt(my_draw)
+%pt(property_type)
+%pt(my_prop)
+%pt(borrower)
+%pt(my_price)
+%pt(my_orig_cmv)
+%pt(my_orig_adv)
+%pt(my_os_p)
+%pt(my_oltv)
+
+proc tabulate data=mtg missing;
+where orig_ltv>=71;
+class gp orig_ltv;
+table (orig_ltv all), (gp all)*n*f=comma9. /rts=17. printmiss;
+format orig_ltv 7.;
+title "Orig_LTV>=71 @&yymm.";
+run;
+
+
+*CLTV;
+proc sort data=mtg nodupkey;
+by bm_acno;
+proc sort data=stress.new_4cmv&yymm. out=tmp nodupkey;
+by bm_acno;
+data mtg in o1;
+merge mtg(in=a) tmp(in=b keep=bm_acno cltv);
+by bm_acno;
+if a then do;
+  format my_cltv $20.;
+  if cltv<=50 then my_cltv='a.0.1% to 50%';
+  else if cltv<=60 then my_cltv='b.50.1% to 60%';
+  else if cltv<=70 then my_cltv='c.60.1% to 70%';
+  else if cltv<=80 then my_cltv='d.70.1% to 80%';
+  else if cltv<=90 then my_cltv='e.80.1% to 90%';
+  else if cltv<=100 then my_cltv='f.90.1% to 100%';
+  else if cltv<=110 then my_cltv='g.100.1% to 110%';
+  else if cltv<=120 then my_cltv='h.110.1% to 120%';
+  else if cltv<=130 then my_cltv='i.120.1% to 130%';
+  else my_cltv='j.>130%';
+  output mtg;
+end;
+if a=1 and b=1 then output in;
+if a=1 and b=0 then output o1;
+run;
+%macro pt(aa);
+proc tabulate data=mtg missing;
+class gp &aa.;
+table (&aa. all), (gp all)*n*f=comma9. /rts=17. printmiss;
+title "HL @&yymm.";
+run;
+%mend pt;
+%pt(my_cltv)
+
+
+*merge w Access;
+data mtg in o1 o2;
+merge mtg(in=a) stress.access(in=b keep=bm_acno access_income access ass_dti ass_vdsr);
+by bm_acno;
+if a then output mtg;
+if a=1 and b=1 then output in;
+if a=1 and b=0 then output o1;
+if a=0 and b=1 then output o2;
+run;
+
+
+*merge w MARS;
+data mars;
+run;
+%macro pt(aa);
+data tmp;
+%let _EFIERR_ = 0; /* set the ERROR detection macro variable */
+infile  "E:\Userdata\philip_yue\sas_pgm\_mtg\mthly\data\dsr_inc&aa..txt" delimiter = '|' MISSOVER DSD lrecl=32767 firstobs=2 ;
+informat Seq_no $12. ;
+informat Loan_no $20. ;
+informat Total_Ver_Inc comma32.;
+informat Total_Claimed_Inc comma32.;
+informat Mth_Inc comma32.;
+informat Int_spread 12.3 ;
+informat Verified_DSR $10.;
+informat Claimed_DSR $10.;
+informat DSR $10.;
+informat AP_rem $10. ;
+informat dev_cde1 $10.;
+informat app_cde1 $10.;
+informat app_cde2 $10.;
+informat mars_Ltype $30. ;
+informat use_ppty $18. ;
+input
+Seq_no $
+Loan_no $
+Total_Ver_Inc 
+Total_Claimed_Inc 
+Mth_Inc 
+Int_spread 
+Verified_DSR $
+Claimed_DSR $
+DSR $
+AP_rem $
+dev_cde1 $
+app_cde1 $
+app_cde2 $
+mars_Ltype
+use_ppty
+;
+if _ERROR_ then call symputx('_EFIERR_',1);  /* set ERROR detection macro variable */
+if upcase(AP_REM)='ARCHIVED' then delete;
+mars='Yes';
+run;
+data mars;
+set mars tmp;
+run;
+%mend pt;
+%pt(&yymm.)
+%pt(120630)*keep archive set;
+%pt(110630)*keep archive set;
+%pt(100630)*keep archive set;
+%pt(090630)*keep archive set;
+%pt(080627)*keep archive set;
+
+data mars;
+set mars;
+if mth_inc>100 then mars_inc=mth_inc;
+else if total_ver_inc>100 then mars_inc=total_ver_inc;
+else if total_claimed_inc>100 then mars_inc=total_claimed_inc;
+
+if dsr>0 then mars_dsr=dsr*1;
+else if verified_dsr>0 then mars_dsr=verified_dsr*1;
+else if claimed_dsr>0 then mars_dsr=claimed_dsr*1;
+run;
+
+proc sort data=mars nodupkey;
+by seq_no;
+where seq_no^=' ';
+run;
+proc sort data=mtg;
+by seq_no;
+data mtg in o1 o2;
+merge mtg(in=a) mars(in=b);
+by seq_no;
+if a then output mtg;
+if a=1 and b=1 then output in;
+if a=1 and b=0 then output o1;
+if a=0 and b=1 then output o2;
+run;
+
+
+*merge description;
+data tmp;
+%let _EFIERR_ = 0; /* set the ERROR detection macro variable */
+infile 'E:\Userdata\philip_yue\sas_pgm\_mtg\mthly\data\dev_code.txt' delimiter = '|' MISSOVER DSD lrecl=32767 firstobs=2 ;
+format dev_cde1 $8. ;
+format dev_desc $80. ;
+format dev_gp $2. ;
+format dev_gp_desc $80. ;
+input
+dev_cde1 $
+dev_desc $
+dev_gp $
+dev_gp_desc $
+;
+if _ERROR_ then call symputx('_EFIERR_',1);  /* set ERROR detection macro variable */
+if dev_cde1^=' ';
+run;
+proc sort data=tmp nodupkey;
+by dev_cde1;
+proc sort data=mtg;
+by dev_cde1;
+data mtg in out_dev;
+merge mtg(in=a) tmp(in=b);
+by dev_cde1;
+if a then output mtg;
+if a=1 and b=1 then output in;
+if a=1 and b=0 then output out_dev;
+run;
+
+proc freq data=out_dev;
+where dev_cde1^=' ';
+table dev_cde1;
+title "Checking :  IF observed, voice OUT";
+run;
+
+
+*tuned (for dsr: DL suggest better use verified_dsr);
+data mtg;
+set mtg;
+	if access_income>100 then final_income=access_income;
+	else if mars_inc>100 then final_income=mars_inc;
+if ass_vdsr>0 then orig_dsr=ass_vdsr;
+else if mars_dsr>0 then orig_dsr=mars_dsr;
+else if dsr>0 then orig_dsr=dsr;  
+	if orig_dsr>100 then orig_dsr=dsr;
+if final_income>0 then inc_yn='Y';
+if orig_dsr>0 then dsr_yn='Y';
+
+*Re-group;
+format my_odsr my_income my_use my_ltype $25. my_dev $85.;
+if orig_dsr<=0 then my_odsr='h.data miss';
+else if orig_dsr<=30 then my_odsr='a.0.1% to 30%';
+else if orig_dsr<=50 then my_odsr='b.30.1% to 50%';
+else if orig_dsr<=55 then my_odsr='c.50.1% to 55%';
+else if orig_dsr<=60 then my_odsr='d.55.1% to 60%';
+else if orig_dsr<=70 then my_odsr='e.60.1% to 70%';
+else if orig_dsr<=80 then my_odsr='f.70.1% to 80%';
+else my_odsr='g. >80%';
+
+if substr(upcase(App_Cde2),1,4) in ('A01O','A01P','A01K','A01L','A01R')
+or upcase(App_Cde1) in ('R05','R07','R12','R13') then my_income='a.ABL';
+else if final_income<=0 then my_income='i.data miss';
+else if final_income<=10000 then my_income='b.0.1K to 10K';
+else if final_income<=20000 then my_income='c.10.1K to 20K';
+else if final_income<=30000 then my_income='d.20.1K to 30K';
+else if final_income<=40000 then my_income='e.30.1K to 40K';
+else if final_income<=50000 then my_income='f.40.1K to 50K';
+else if final_income<=100000 then my_income='g.50.1K to 100K';
+else my_income='h. >100K';
+
+if use_ppty='Self-Occupied' then my_use='a.owner-occupied';
+else if use_ppty in ('Investment','Rental') then my_use='b.non-occupied';
+else if use_ppty=' ' then my_use='c.Miss or NO MARS';
+else my_use='ERROR';
+
+if upcase(mars_Ltype)='NEW PURCHASE' then my_ltype='a.new purchase';
+else if upcase(mars_Ltype)='REFINANCE WITH CASH OUT' then my_ltype='b.refinance with cash';
+else if upcase(mars_Ltype)='REFINANCE WITHOUT CASH OUT' then my_ltype='c.refinance without cash';
+else if mars_Ltype=' ' then my_ltype='d.Miss or NO MARS';
+else my_ltype='ERROR';
+
+if mars^='Yes' then my_dev='z.NO MARS Record';
+else if dev_cde1=' ' then my_dev='  Normal Approval';
+else if dev_cde1 in ('PE02','PE06','PI01') 
+then my_dev='Negative Bureau - Public Record (PE02)/ Bankrupt (PE06)';
+else if dev_cde1 in ('PO01','PO05') then my_dev='Unacceptable financing period (PO01)/ amount (PO05)';
+else if dev_cde1 in ('PP01','PP01a','PP01b','PP01c','PP01d')
+then my_dev='Property with building order (PP01)/ (PP01a~d)';
+else my_dev=trim(dev_desc)||' ('||trim(dev_cde1)||')';
+run;
+
+
+%macro pt(aa);
+proc tabulate data=mtg missing;
+class gp &aa.;
+table (&aa. all), (gp all)*n*f=comma9. /rts=17. printmiss;
+title "HL @&yymm.";
+run;
+%mend pt;
+%pt(my_odsr)
+%pt(my_income)
+%pt(my_ltype)
+%pt(my_use)
+%pt(my_dev)
+%pt(dev_gp_desc)
+
+proc tabulate data=mtg missing;
+class access mars;
+table access all, (mars all)*n /rts=10. printmiss;
+title "highlevel @&mth.";
+run;
+
+/********** PART I :  Overall Summary **********/
+ods html body="E:\Userdata\samuel_li\compMIS_&yymm._portfolio.xls";
+
+
+/*** Portfolio Overall ***/
+%macro pt(aa,bb,cc);
+
+proc summary data=mtg nway;
+where &aa.="&bb.";
+class &aa.;
+var Original_Loan_Amt OS_Prin Del30_Ind Del30_Amt Del90_Ind Del90_Amt NPL_Ind NPL_Amt
+OS_X_OLT OS_X_RLT OS_x_gross;
+output out=pout sum=;
+run;
+data pout(keep=_freq_ &aa. adv os del30 del90 npl del30_ind del90_ind npl_ind gint Avg_OLT Avg_RLT);
+set pout;
+format adv os del30 del90 npl 8.2  Avg_OLT 12.8 Avg_RLT 12.8;
+Avg_OLT=OS_X_OLT/OS_Prin;
+Avg_RLT=OS_X_RLT/OS_Prin;
+gint=OS_X_gross/OS_Prin;
+adv=Original_Loan_Amt/100000000;
+os=OS_Prin/100000000;
+del30=Del30_Amt/100000000;
+del90=Del90_Amt/100000000;
+npl=NPL_Amt/100000000;
+run;
+
+proc tabulate data=pout missing;
+class &aa.;
+var _freq_ adv os del30_ind del30 del90_ind del90 NPL_Ind npl gint Avg_OLT Avg_RLT;
+table _freq_ adv os del30_ind del30 del90_ind del90 NPL_Ind npl gint Avg_OLT Avg_RLT, &aa.;
+title "&cc.";
+run;
+%mend pt;
+%pt(gp0,cf-rml,CFD Total-RML portfolio @&yymm.)
+ %pt(gp,1.mip,CFD RML_MIP portfolio @&yymm.)
+ %pt(gp,2.rbp,CFD RML_RBP portfolio @&yymm.)
+ %pt(gp,3.scheme,CFD RML_Scheme portfolio @&yymm.)
+ %pt(gp,4.normal,CFD RML_Normal portfolio @&yymm.)
+ %pt(gp,5.rbp,CFD NON-RML_RBP portfolio @&yymm.)
+ %pt(gp,6.non-rbp,CFD NON-RML_NON-RBP portfolio @&yymm.)
+ %pt(gp,7.rml,NON-CFD RML portfolio @&yymm.)
+ %pt(gp,8.non-rml,NON-CFD NON-RML portfolio @&yymm.)
+
+ods html close;
+
+
+
+/********** PART II :  Current Month **********/
+ods html body="E:\Userdata\samuel_li\compMIS_&yymm._curmth.xls";
+
+
+/*** Whole Mtg Portfolio ***/
+proc summary data=mtg NoPrint Missing;
+class loan_group gp;
+var OS_Prin OS_x_gross;
+output out=loan_group sum=;
+run;
+data loan_group(keep=loan_group gp acs OS_Prin gint);
+set loan_group;
+if loan_group=' ' and _type_^=0 then delete;
+Format OS_Prin 8.2;
+gint=OS_X_gross/OS_Prin;
+OS_Prin=OS_Prin/100000000;
+rename _freq_=acs;
+if _type_=0 then loan_group='zALL';
+if gp=' ' then gp='zALL';
+run;
+proc sort data=loan_group;
+by loan_group gp;
+proc print data=loan_group noobs;
+var loan_group gp acs os_prin gint;
+title "Bankwide Mortgage Portfolio @&yymm.";
+run;
+
+
+/*** Orig_Income ***/
+%macro pt(zz,aa,bb,cc);
+proc summary data=mtg missing;
+where &aa.="&bb.";
+class &zz.;
+var os del30_ind Del30 del90_ind Del90 npl_ind NPL;
+output out=tmp sum=;
+run;
+
+data a;
+z='xxx';
+a='a.ABL';
+b='b.0.1K to 10K';
+c='c.10.1K to 20K';
+d='d.20.1K to 30K';
+e='e.30.1K to 40K';
+f='f.40.1K to 50K';
+g='g.50.1K to 100K';
+h='h. >100K';
+i='i.data miss';
+run;
+proc transpose data=a out=b(keep=col1 rename=(col1=&zz.));
+by z;
+var a--i;
+run;
+data tmp;
+merge b tmp;
+by &zz.;
+if &zz.=' ' then &zz.='zALL';
+run;
+
+proc sort data=tmp;
+by &zz.;
+proc print data=tmp noobs;
+var &zz. _freq_ os del30_ind Del30 del90_ind Del90 npl_ind NPL;
+title "&cc.";
+run;
+%mend pt;
+%pt(my_income,gp0,cf-rml,CFD Total-RML portfolio @&yymm.)
+ %pt(my_income,gp,1.mip,CFD RML_MIP portfolio @&yymm.)
+ %pt(my_income,gp,2.rbp,CFD RML_RBP portfolio @&yymm.)
+ %pt(my_income,gp,3.scheme,CFD RML_Scheme portfolio @&yymm.)
+ %pt(my_income,gp,4.normal,CFD RML_Normal portfolio @&yymm.)
+ %pt(my_income,gp,5.rbp,CFD NON-RML_RBP portfolio @&yymm.)
+ %pt(my_income,gp,6.non-rbp,CFD NON-RML_NON-RBP portfolio @&yymm.)
+ %pt(my_income,gp,7.rml,NON-CFD RML portfolio @&yymm.)
+ %pt(my_income,gp,8.non-rml,NON-CFD NON-RML portfolio @&yymm.)
+
+
+/*** Pricing ***/
+%macro pt(zz,aa,bb,cc);
+proc summary data=mtg missing;
+where &aa.="&bb.";
+class &zz.;
+var os del30_ind Del30 del90_ind Del90 npl_ind NPL;
+output out=tmp sum=;
+run;
+
+data a;
+z='xxx';
+a='ha.<H+0.7';
+b='hb.>=H+0.7 to <=H+1';
+c='hc.>H+1';
+d='pa.Below P-3.00%';
+e='pb.P-3.00% -< P-2.75%';
+f='pc.P-2.75% -< P-2.50%';
+g='pd.P-2.50% -< P-2.25%';
+h='pe.P-2.25% -< P-2.00%';
+i='pf.P-2.00% -< P-1.00%';
+j='pg.P-1.00% -< Prime Flat';
+k='ph.Prime or Above';
+l='x.non prime/hibor';
+run;
+proc transpose data=a out=b(keep=col1 rename=(col1=&zz.));
+by z;
+var a--l;
+run;
+data tmp;
+merge b tmp;
+by &zz.;
+if &zz.=' ' then &zz.='zALL';
+run;
+
+proc sort data=tmp;
+by &zz.;
+proc print data=tmp noobs;
+var &zz. _freq_ os del30_ind Del30 del90_ind Del90 npl_ind NPL;
+title "&cc.";
+run;
+%mend pt;
+%pt(my_price,gp0,cf-rml,CFD Total-RML portfolio @&yymm.)
+ %pt(my_price,gp,1.mip,CFD RML_MIP portfolio @&yymm.)
+ %pt(my_price,gp,2.rbp,CFD RML_RBP portfolio @&yymm.)
+ %pt(my_price,gp,3.scheme,CFD RML_Scheme portfolio @&yymm.)
+ %pt(my_price,gp,4.normal,CFD RML_Normal portfolio @&yymm.)
+ %pt(my_price,gp,5.rbp,CFD NON-RML_RBP portfolio @&yymm.)
+ %pt(my_price,gp,6.non-rbp,CFD NON-RML_NON-RBP portfolio @&yymm.)
+ %pt(my_price,gp,7.rml,NON-CFD RML portfolio @&yymm.)
+ %pt(my_price,gp,8.non-rml,NON-CFD NON-RML portfolio @&yymm.)
+
+
+/*** Drawn Date ***/
+%macro pt(zz,aa,bb,cc);
+proc summary data=mtg missing;
+where &aa.="&bb.";
+class &zz.;
+var os del30_ind Del30 del90_ind Del90 npl_ind NPL;
+output out=tmp sum=;
+run;
+
+data a;
+z='xxx';
+a='1996 or before';
+b='1997';
+c='1998';
+d='1999';
+e='2000';
+f='2001';
+g='2002';
+h='2003';
+i='2004';
+j='2005';
+k='2006';
+l='2007';
+m='2008';
+n='2009';
+o='2010';
+p='2011';
+q='2012';
+r='2013';
+run;
+proc transpose data=a out=b(keep=col1 rename=(col1=&zz.));
+by z;
+var a--r;
+run;
+data tmp;
+merge b tmp;
+by &zz.;
+if &zz.=' ' then &zz.='zALL';
+run;
+
+proc sort data=tmp;
+by &zz.;
+proc print data=tmp noobs;
+var &zz. _freq_ os del30_ind Del30 del90_ind Del90 npl_ind NPL;
+title "&cc.";
+run;
+%mend pt;
+%pt(my_draw,gp0,cf-rml,CFD Total-RML portfolio @&yymm.)
+ %pt(my_draw,gp,1.mip,CFD RML_MIP portfolio @&yymm.)
+ %pt(my_draw,gp,2.rbp,CFD RML_RBP portfolio @&yymm.)
+ %pt(my_draw,gp,3.scheme,CFD RML_Scheme portfolio @&yymm.)
+ %pt(my_draw,gp,4.normal,CFD RML_Normal portfolio @&yymm.)
+ %pt(my_draw,gp,5.rbp,CFD NON-RML_RBP portfolio @&yymm.)
+ %pt(my_draw,gp,6.non-rbp,CFD NON-RML_NON-RBP portfolio @&yymm.)
+ %pt(my_draw,gp,7.rml,NON-CFD RML portfolio @&yymm.)
+ %pt(my_draw,gp,8.non-rml,NON-CFD NON-RML portfolio @&yymm.)
+
+
+/*** Deviation ***/
+%macro pt(zz,aa,bb,cc);
+proc summary data=mtg missing;
+where &aa.="&bb.";
+class &zz.;
+var os del30_ind Del30 del90_ind Del90 npl_ind NPL;
+output out=tmp sum=;
+run;
+
+data a;
+z='xxx';
+a='  Normal Approval';
+b='Age of borrower plus loan period > 70 (PO03a)';
+c='Age of borrower plus loan period exceed guideline (PO03)';
+d='Age of property exceeds guidelines (PO02)';
+e='Exceed maximum age (PC02)';
+f='Income substantiation (Inadequate income doc) (JD02)';
+g='Income substantiation (No income doc) (PD01)';
+h='Negative Bureau - Public Record (PE02)/ Bankrupt (PE06)';
+i='Negative Credit Bureau exact match (PE01)';
+j='Negative Credit Bureau possible match / alert (PE03)';
+k='Property age plus loan tenor exceed guideline (PO04)';
+l='Property with building order (PP01)/ (PP01a~d)';
+m='Quality of property (PP03)';
+n='Repayment ability (cashflow /DSR) (PF01)';
+o='Unacceptable financing period (PO01)/ amount (PO05)';
+p='Weak a/c balance/Financial weakness (JF03)';
+q='Weak conduct of account (Borrower) (PI06)';
+r='z.NO MARS Record';
+run;
+proc transpose data=a out=b(keep=col1 rename=(col1=&zz.));
+by z;
+var a--r;
+run;
+data tmp;
+merge b tmp;
+by &zz.;
+if &zz.=' ' then &zz.='zALL';
+run;
+
+proc sort data=tmp;
+by &zz.;
+proc print data=tmp noobs;
+var &zz. _freq_ os del30_ind Del30 del90_ind Del90 npl_ind NPL;
+title "&cc.";
+run;
+%mend pt;
+%pt(my_dev,gp0,cf-rml,CFD Total-RML portfolio @&yymm.)
+ %pt(my_dev,gp,1.mip,CFD RML_MIP portfolio @&yymm.)
+ %pt(my_dev,gp,2.rbp,CFD RML_RBP portfolio @&yymm.)
+ %pt(my_dev,gp,3.scheme,CFD RML_Scheme portfolio @&yymm.)
+ %pt(my_dev,gp,4.normal,CFD RML_Normal portfolio @&yymm.)
+ %pt(my_dev,gp,5.rbp,CFD NON-RML_RBP portfolio @&yymm.)
+ %pt(my_dev,gp,6.non-rbp,CFD NON-RML_NON-RBP portfolio @&yymm.)
+ %pt(my_dev,gp,7.rml,NON-CFD RML portfolio @&yymm.)
+ %pt(my_dev,gp,8.non-rml,NON-CFD NON-RML portfolio @&yymm.)
+
+
+/*** Orig CMV ***/
+%macro pt(zz,aa,bb,cc);
+proc summary data=mtg missing;
+where &aa.="&bb.";
+class &zz.;
+var os del30_ind Del30 del90_ind Del90 npl_ind NPL;
+output out=tmp sum=;
+run;
+
+data a;
+z='xxx';
+a='a.<=1M';
+b='b. >1M to <=2M';
+c='c. >2M to <=3M';
+d='d. >3M to <=4M';
+e='e. >4M to <=6M';
+f='f. >6M to <=8M';
+g='g. >8M to <=10M';
+h='h. >10M to <=12M';
+i='i. >12M to <=15M';
+j='j. >15M to <=20M';
+k='k. >20M';
+run;
+proc transpose data=a out=b(keep=col1 rename=(col1=&zz.));
+by z;
+var a--k;
+run;
+data tmp;
+merge b tmp;
+by &zz.;
+if &zz.=' ' then &zz.='zALL';
+run;
+
+proc sort data=tmp;
+by &zz.;
+proc print data=tmp noobs;
+var &zz. _freq_ os del30_ind Del30 del90_ind Del90 npl_ind NPL;
+title "&cc.";
+run;
+%mend pt;
+%pt(my_orig_cmv,gp0,cf-rml,CFD Total-RML portfolio @&yymm.)
+ %pt(my_orig_cmv,gp,1.mip,CFD RML_MIP portfolio @&yymm.)
+ %pt(my_orig_cmv,gp,2.rbp,CFD RML_RBP portfolio @&yymm.)
+ %pt(my_orig_cmv,gp,3.scheme,CFD RML_Scheme portfolio @&yymm.)
+ %pt(my_orig_cmv,gp,4.normal,CFD RML_Normal portfolio @&yymm.)
+ %pt(my_orig_cmv,gp,5.rbp,CFD NON-RML_RBP portfolio @&yymm.)
+ %pt(my_orig_cmv,gp,6.non-rbp,CFD NON-RML_NON-RBP portfolio @&yymm.)
+ %pt(my_orig_cmv,gp,7.rml,NON-CFD RML portfolio @&yymm.)
+ %pt(my_orig_cmv,gp,8.non-rml,NON-CFD NON-RML portfolio @&yymm.)
+
+
+/*** Orig Advance ***/
+%macro pt(zz,aa,bb,cc);
+proc summary data=mtg missing;
+where &aa.="&bb.";
+class &zz.;
+var os del30_ind Del30 del90_ind Del90 npl_ind NPL;
+output out=tmp sum=;
+run;
+
+data a;
+z='xxx';
+a='a.<=1M';
+b='b. >1M to <=2M';
+c='c. >2M to <=3M';
+d='d. >3M to <=4M';
+e='e. >4M to <=6M';
+f='f. >6M to <=8M';
+g='g. >8M to <=10M';
+h='h. >10M';
+run;
+proc transpose data=a out=b(keep=col1 rename=(col1=&zz.));
+by z;
+var a--h;
+run;
+data tmp;
+merge b tmp;
+by &zz.;
+if &zz.=' ' then &zz.='zALL';
+run;
+
+proc sort data=tmp;
+by &zz.;
+proc print data=tmp noobs;
+var &zz. _freq_ os del30_ind Del30 del90_ind Del90 npl_ind NPL;
+title "&cc.";
+run;
+%mend pt;
+%pt(my_orig_adv,gp0,cf-rml,CFD Total-RML portfolio @&yymm.)
+ %pt(my_orig_adv,gp,1.mip,CFD RML_MIP portfolio @&yymm.)
+ %pt(my_orig_adv,gp,2.rbp,CFD RML_RBP portfolio @&yymm.)
+ %pt(my_orig_adv,gp,3.scheme,CFD RML_Scheme portfolio @&yymm.)
+ %pt(my_orig_adv,gp,4.normal,CFD RML_Normal portfolio @&yymm.)
+ %pt(my_orig_adv,gp,5.rbp,CFD NON-RML_RBP portfolio @&yymm.)
+ %pt(my_orig_adv,gp,6.non-rbp,CFD NON-RML_NON-RBP portfolio @&yymm.)
+ %pt(my_orig_adv,gp,7.rml,NON-CFD RML portfolio @&yymm.)
+ %pt(my_orig_adv,gp,8.non-rml,NON-CFD NON-RML portfolio @&yymm.)
+
+
+/*** OS Prin ***/
+%macro pt(zz,aa,bb,cc);
+proc summary data=mtg missing;
+where &aa.="&bb.";
+class &zz.;
+var os del30_ind Del30 del90_ind Del90 npl_ind NPL;
+output out=tmp sum=;
+run;
+
+data a;
+z='xxx';
+a='a.<=0.5M';
+b='b. >0.5M to <=1M';
+c='c. >1M to <=2M';
+d='d. >2M to <=3M';
+e='e. >3M to <=4M';
+f='f. >4M to <=5M';
+g='g. >5M to <=10M';
+h='h. >10M';
+run;
+proc transpose data=a out=b(keep=col1 rename=(col1=&zz.));
+by z;
+var a--h;
+run;
+data tmp;
+merge b tmp;
+by &zz.;
+if &zz.=' ' then &zz.='zALL';
+run;
+
+proc sort data=tmp;
+by &zz.;
+proc print data=tmp noobs;
+var &zz. _freq_ os del30_ind Del30 del90_ind Del90 npl_ind NPL;
+title "&cc.";
+run;
+%mend pt;
+%pt(my_os_p,gp0,cf-rml,CFD Total-RML portfolio @&yymm.)
+ %pt(my_os_p,gp,1.mip,CFD RML_MIP portfolio @&yymm.)
+ %pt(my_os_p,gp,2.rbp,CFD RML_RBP portfolio @&yymm.)
+ %pt(my_os_p,gp,3.scheme,CFD RML_Scheme portfolio @&yymm.)
+ %pt(my_os_p,gp,4.normal,CFD RML_Normal portfolio @&yymm.)
+ %pt(my_os_p,gp,5.rbp,CFD NON-RML_RBP portfolio @&yymm.)
+ %pt(my_os_p,gp,6.non-rbp,CFD NON-RML_NON-RBP portfolio @&yymm.)
+ %pt(my_os_p,gp,7.rml,NON-CFD RML portfolio @&yymm.)
+ %pt(my_os_p,gp,8.non-rml,NON-CFD NON-RML portfolio @&yymm.)
+
+
+/*** Orig LTV ***/
+%macro pt(zz,aa,bb,cc);
+proc summary data=mtg missing;
+where &aa.="&bb.";
+class &zz.;
+var os del30_ind Del30 del90_ind Del90 npl_ind NPL;
+output out=tmp sum=;
+run;
+
+data a;
+z='xxx';
+a='a.0.1% to 40%';
+b='b.41% to 50%';
+c='c.51% to 60%';
+d='d.61% to 70%';
+e='e.71% to 80%';
+f='f.81% to 90%';
+g='g.>=91%';
+run;
+proc transpose data=a out=b(keep=col1 rename=(col1=&zz.));
+by z;
+var a--g;
+run;
+data tmp;
+merge b tmp;
+by &zz.;
+if &zz.=' ' then &zz.='zALL';
+run;
+
+proc sort data=tmp;
+by &zz.;
+proc print data=tmp noobs;
+var &zz. _freq_ os del30_ind Del30 del90_ind Del90 npl_ind NPL;
+title "&cc.";
+run;
+%mend pt;
+%pt(my_oltv,gp0,cf-rml,CFD Total-RML portfolio @&yymm.)
+ %pt(my_oltv,gp,1.mip,CFD RML_MIP portfolio @&yymm.)
+ %pt(my_oltv,gp,2.rbp,CFD RML_RBP portfolio @&yymm.)
+ %pt(my_oltv,gp,3.scheme,CFD RML_Scheme portfolio @&yymm.)
+ %pt(my_oltv,gp,4.normal,CFD RML_Normal portfolio @&yymm.)
+ %pt(my_oltv,gp,5.rbp,CFD NON-RML_RBP portfolio @&yymm.)
+ %pt(my_oltv,gp,6.non-rbp,CFD NON-RML_NON-RBP portfolio @&yymm.)
+ %pt(my_oltv,gp,7.rml,NON-CFD RML portfolio @&yymm.)
+ %pt(my_oltv,gp,8.non-rml,NON-CFD NON-RML portfolio @&yymm.)
+
+
+/*** Current LTV ***/
+%macro pt(zz,aa,bb,cc);
+proc summary data=mtg missing;
+where &aa.="&bb.";
+class &zz.;
+var os del30_ind Del30 del90_ind Del90 npl_ind NPL;
+output out=tmp sum=;
+run;
+
+data a;
+z='xxx';
+a='a.0.1% to 50%';
+b='b.50.1% to 60%';
+c='c.60.1% to 70%';
+d='d.70.1% to 80%';
+e='e.80.1% to 90%';
+f='f.90.1% to 100%';
+g='g.100.1% to 110%';
+h='h.110.1% to 120%';
+i='i.120.1% to 130%';
+j='j.>130%';
+run;
+proc transpose data=a out=b(keep=col1 rename=(col1=&zz.));
+by z;
+var a--j;
+run;
+data tmp;
+merge b tmp;
+by &zz.;
+if &zz.=' ' then &zz.='zALL';
+run;
+
+proc sort data=tmp;
+by &zz.;
+proc print data=tmp noobs;
+var &zz. _freq_ os del30_ind Del30 del90_ind Del90 npl_ind NPL;
+title "&cc.";
+run;
+%mend pt;
+%pt(my_cltv,gp0,cf-rml,CFD Total-RML portfolio @&yymm.)
+ %pt(my_cltv,gp,1.mip,CFD RML_MIP portfolio @&yymm.)
+ %pt(my_cltv,gp,2.rbp,CFD RML_RBP portfolio @&yymm.)
+ %pt(my_cltv,gp,3.scheme,CFD RML_Scheme portfolio @&yymm.)
+ %pt(my_cltv,gp,4.normal,CFD RML_Normal portfolio @&yymm.)
+ /*%pt(my_cltv,gp,5.rbp,CFD NON-RML_RBP portfolio @&yymm.)*/
+ /*%pt(my_cltv,gp,6.non-rbp,CFD NON-RML_NON-RBP portfolio @&yymm.)*/
+ %pt(my_cltv,gp,7.rml,NON-CFD RML portfolio @&yymm.)
+ /*%pt(my_cltv,gp,8.non-rml,NON-CFD NON-RML portfolio @&yymm.)*/
+
+
+/*** Orig_DSR ***/
+data in_base;
+set mtg;
+if my_income^='a.ABL';
+run;
+%macro pt(zz,aa,bb,cc);
+proc summary data=in_base missing;
+where &aa.="&bb.";
+class &zz.;
+var os del30_ind Del30 del90_ind Del90 npl_ind NPL;
+output out=tmp sum=;
+run;
+
+data a;
+z='xxx';
+a='a.0.1% to 30%';
+b='b.30.1% to 50%';
+c='c.50.1% to 55%';
+d='d.55.1% to 60%';
+e='e.60.1% to 70%';
+f='f.70.1% to 80%';
+g='g. >80%';
+h='h.data miss';
+run;
+proc transpose data=a out=b(keep=col1 rename=(col1=&zz.));
+by z;
+var a--h;
+run;
+data tmp;
+merge b tmp;
+by &zz.;
+if &zz.=' ' then &zz.='zALL';
+run;
+
+proc sort data=tmp;
+by &zz.;
+proc print data=tmp noobs;
+var &zz. _freq_ os del30_ind Del30 del90_ind Del90 npl_ind NPL;
+title "Income Based Lending : &cc.";
+run;
+%mend pt;
+%pt(my_odsr,gp0,cf-rml,CFD Total-RML portfolio @&yymm.)
+ %pt(my_odsr,gp,1.mip,CFD RML_MIP portfolio @&yymm.)
+ %pt(my_odsr,gp,2.rbp,CFD RML_RBP portfolio @&yymm.)
+ %pt(my_odsr,gp,3.scheme,CFD RML_Scheme portfolio @&yymm.)
+ %pt(my_odsr,gp,4.normal,CFD RML_Normal portfolio @&yymm.)
+ %pt(my_odsr,gp,5.rbp,CFD NON-RML_RBP portfolio @&yymm.)
+ %pt(my_odsr,gp,6.non-rbp,CFD NON-RML_NON-RBP portfolio @&yymm.)
+ %pt(my_odsr,gp,7.rml,NON-CFD RML portfolio @&yymm.)
+ %pt(my_odsr,gp,8.non-rml,NON-CFD NON-RML portfolio @&yymm.)
+
+
+/*** Orig Tenor ***/
+%macro pt(zz,aa,bb,cc);
+proc summary data=mtg missing;
+where &aa.="&bb.";
+class &zz.;
+var os del30_ind Del30 del90_ind Del90 npl_ind NPL;
+output out=tmp sum=;
+run;
+
+data a;
+z='xxx';
+a='a.5.0 Years or Less';
+b='b.5.1 - 10.0 Years';
+c='c.10.1 - 15.0 Years';
+d='d.15.1 - 20.0 Years';
+e='e.20.1 - 25.0 Years';
+f='f.25.1 - 30.0 Years';
+run;
+proc transpose data=a out=b(keep=col1 rename=(col1=&zz.));
+by z;
+var a--f;
+run;
+data tmp;
+merge b tmp;
+by &zz.;
+if &zz.=' ' then &zz.='zALL';
+run;
+
+proc sort data=tmp;
+by &zz.;
+proc print data=tmp noobs;
+var &zz. _freq_ os del30_ind Del30 del90_ind Del90 npl_ind NPL;
+title "&cc.";
+run;
+%mend pt;
+%pt(olt,gp0,cf-rml,CFD Total-RML portfolio @&yymm.)
+ %pt(olt,gp,1.mip,CFD RML_MIP portfolio @&yymm.)
+ %pt(olt,gp,2.rbp,CFD RML_RBP portfolio @&yymm.)
+ %pt(olt,gp,3.scheme,CFD RML_Scheme portfolio @&yymm.)
+ %pt(olt,gp,4.normal,CFD RML_Normal portfolio @&yymm.)
+ %pt(olt,gp,5.rbp,CFD NON-RML_RBP portfolio @&yymm.)
+ %pt(olt,gp,6.non-rbp,CFD NON-RML_NON-RBP portfolio @&yymm.)
+ %pt(olt,gp,7.rml,NON-CFD RML portfolio @&yymm.)
+ %pt(olt,gp,8.non-rml,NON-CFD NON-RML portfolio @&yymm.)
+
+
+/*** Remain Tenor ***/
+%macro pt(zz,aa,bb,cc);
+proc summary data=mtg missing;
+where &aa.="&bb.";
+class &zz.;
+var os del30_ind Del30 del90_ind Del90 npl_ind NPL;
+output out=tmp sum=;
+run;
+
+data a;
+z='xxx';
+a='a.1.0 Year or Less';
+b='b.1.1 - 3.0 Years';
+c='c.3.1 - 5.0 Years';
+d='d.5.1 - 10.0 Years';
+e='e.10.1 - 15.0 Years';
+f='f.15.1 - 20.0 Years';
+g='g.20.1 - 25.0 Years';
+h='h.25.1 - 30.0 Years';
+run;
+proc transpose data=a out=b(keep=col1 rename=(col1=&zz.));
+by z;
+var a--h;
+run;
+data tmp;
+merge b tmp;
+by &zz.;
+if &zz.=' ' then &zz.='zALL';
+run;
+
+proc sort data=tmp;
+by &zz.;
+proc print data=tmp noobs;
+var &zz. _freq_ os del30_ind Del30 del90_ind Del90 npl_ind NPL;
+title "&cc.";
+run;
+%mend pt;
+%pt(rlt,gp0,cf-rml,CFD Total-RML portfolio @&yymm.)
+ %pt(rlt,gp,1.mip,CFD RML_MIP portfolio @&yymm.)
+ %pt(rlt,gp,2.rbp,CFD RML_RBP portfolio @&yymm.)
+ %pt(rlt,gp,3.scheme,CFD RML_Scheme portfolio @&yymm.)
+ %pt(rlt,gp,4.normal,CFD RML_Normal portfolio @&yymm.)
+ %pt(rlt,gp,5.rbp,CFD NON-RML_RBP portfolio @&yymm.)
+ %pt(rlt,gp,6.non-rbp,CFD NON-RML_NON-RBP portfolio @&yymm.)
+ %pt(rlt,gp,7.rml,NON-CFD RML portfolio @&yymm.)
+ %pt(rlt,gp,8.non-rml,NON-CFD NON-RML portfolio @&yymm.)
+
+
+/*** Property Type ***/
+%macro pt(zz,aa,bb,cc);
+proc summary data=mtg missing;
+where &aa.="&bb.";
+class &zz.;
+var os del30_ind Del30 del90_ind Del90 npl_ind NPL;
+output out=tmp sum=;
+run;
+
+data a;
+z='xxx';
+a='a.Village House';
+b='b.Residential';
+c='c.Res+Car Park';
+d='d.Car Park';
+e='e.Commericial';
+f='f.Industrial';
+run;
+proc transpose data=a out=b(keep=col1 rename=(col1=&zz.));
+by z;
+var a--f;
+run;
+data tmp;
+merge b tmp;
+by &zz.;
+if &zz.=' ' then &zz.='zALL';
+run;
+
+proc sort data=tmp;
+by &zz.;
+proc print data=tmp noobs;
+var &zz. _freq_ os del30_ind Del30 del90_ind Del90 npl_ind NPL;
+title "&cc.";
+run;
+%mend pt;
+%pt(my_prop,gp0,cf-rml,CFD Total-RML portfolio @&yymm.)
+ %pt(my_prop,gp,1.mip,CFD RML_MIP portfolio @&yymm.)
+ %pt(my_prop,gp,2.rbp,CFD RML_RBP portfolio @&yymm.)
+ %pt(my_prop,gp,3.scheme,CFD RML_Scheme portfolio @&yymm.)
+ %pt(my_prop,gp,4.normal,CFD RML_Normal portfolio @&yymm.)
+ %pt(my_prop,gp,5.rbp,CFD NON-RML_RBP portfolio @&yymm.)
+ %pt(my_prop,gp,6.non-rbp,CFD NON-RML_NON-RBP portfolio @&yymm.)
+ %pt(my_prop,gp,7.rml,NON-CFD RML portfolio @&yymm.)
+ %pt(my_prop,gp,8.non-rml,NON-CFD NON-RML portfolio @&yymm.)
+
+
+/*** Borrower Type ***/
+%macro pt(zz,aa,bb,cc);
+proc summary data=mtg missing;
+where &aa.="&bb.";
+class &zz.;
+var os del30_ind Del30 del90_ind Del90 npl_ind NPL;
+output out=tmp sum=;
+run;
+
+data a;
+z='xxx';
+a='Company Name';
+b='Individual Name';
+run;
+proc transpose data=a out=b(keep=col1 rename=(col1=&zz.));
+by z;
+var a--b;
+run;
+data tmp;
+merge b tmp;
+by &zz.;
+if &zz.=' ' then &zz.='zALL';
+run;
+
+proc sort data=tmp;
+by &zz.;
+proc print data=tmp noobs;
+var &zz. _freq_ os del30_ind Del30 del90_ind Del90 npl_ind NPL;
+title "&cc.";
+run;
+%mend pt;
+%pt(borrower,gp0,cf-rml,CFD Total-RML portfolio @&yymm.)
+ %pt(borrower,gp,1.mip,CFD RML_MIP portfolio @&yymm.)
+ %pt(borrower,gp,2.rbp,CFD RML_RBP portfolio @&yymm.)
+ %pt(borrower,gp,3.scheme,CFD RML_Scheme portfolio @&yymm.)
+ %pt(borrower,gp,4.normal,CFD RML_Normal portfolio @&yymm.)
+ %pt(borrower,gp,5.rbp,CFD NON-RML_RBP portfolio @&yymm.)
+ %pt(borrower,gp,6.non-rbp,CFD NON-RML_NON-RBP portfolio @&yymm.)
+ %pt(borrower,gp,7.rml,NON-CFD RML portfolio @&yymm.)
+ %pt(borrower,gp,8.non-rml,NON-CFD NON-RML portfolio @&yymm.)
+
+
+/*** Loan Type ***/
+%macro pt(zz,aa,bb,cc);
+proc summary data=mtg missing;
+where &aa.="&bb.";
+class &zz.;
+var os del30_ind Del30 del90_ind Del90 npl_ind NPL;
+output out=tmp sum=;
+run;
+
+data a;
+z='xxx';
+a='a.new purchase';
+b='b.refinance with cash';
+c='c.refinance without cash';
+d='d.Miss or NO MARS';
+run;
+proc transpose data=a out=b(keep=col1 rename=(col1=&zz.));
+by z;
+var a--d;
+run;
+data tmp;
+merge b tmp;
+by &zz.;
+if &zz.=' ' then &zz.='zALL';
+run;
+
+proc sort data=tmp;
+by &zz.;
+proc print data=tmp noobs;
+var &zz. _freq_ os del30_ind Del30 del90_ind Del90 npl_ind NPL;
+title "&cc.";
+run;
+%mend pt;
+%pt(my_ltype,gp0,cf-rml,CFD Total-RML portfolio @&yymm.)
+ %pt(my_ltype,gp,1.mip,CFD RML_MIP portfolio @&yymm.)
+ %pt(my_ltype,gp,2.rbp,CFD RML_RBP portfolio @&yymm.)
+ %pt(my_ltype,gp,3.scheme,CFD RML_Scheme portfolio @&yymm.)
+ %pt(my_ltype,gp,4.normal,CFD RML_Normal portfolio @&yymm.)
+ %pt(my_ltype,gp,5.rbp,CFD NON-RML_RBP portfolio @&yymm.)
+ %pt(my_ltype,gp,6.non-rbp,CFD NON-RML_NON-RBP portfolio @&yymm.)
+ %pt(my_ltype,gp,7.rml,NON-CFD RML portfolio @&yymm.)
+ %pt(my_ltype,gp,8.non-rml,NON-CFD NON-RML portfolio @&yymm.)
+
+
+/*** Use Type ***/
+%macro pt(zz,aa,bb,cc);
+proc summary data=mtg missing;
+where &aa.="&bb.";
+class &zz.;
+var os del30_ind Del30 del90_ind Del90 npl_ind NPL;
+output out=tmp sum=;
+run;
+
+data a;
+z='xxx';
+a='a.owner-occupied';
+b='b.non-occupied';
+c='c.Miss or NO MARS';
+run;
+proc transpose data=a out=b(keep=col1 rename=(col1=&zz.));
+by z;
+var a--c;
+run;
+data tmp;
+merge b tmp;
+by &zz.;
+if &zz.=' ' then &zz.='zALL';
+run;
+
+proc sort data=tmp;
+by &zz.;
+proc print data=tmp noobs;
+var &zz. _freq_ os del30_ind Del30 del90_ind Del90 npl_ind NPL;
+title "&cc.";
+run;
+%mend pt;
+%pt(my_use,gp0,cf-rml,CFD Total-RML portfolio @&yymm.)
+ %pt(my_use,gp,1.mip,CFD RML_MIP portfolio @&yymm.)
+ %pt(my_use,gp,2.rbp,CFD RML_RBP portfolio @&yymm.)
+ %pt(my_use,gp,3.scheme,CFD RML_Scheme portfolio @&yymm.)
+ %pt(my_use,gp,4.normal,CFD RML_Normal portfolio @&yymm.)
+ %pt(my_use,gp,5.rbp,CFD NON-RML_RBP portfolio @&yymm.)
+ %pt(my_use,gp,6.non-rbp,CFD NON-RML_NON-RBP portfolio @&yymm.)
+ %pt(my_use,gp,7.rml,NON-CFD RML portfolio @&yymm.)
+ %pt(my_use,gp,8.non-rml,NON-CFD NON-RML portfolio @&yymm.)
+
+ods html close;
+
+
+
+/********** PART III :  History **********/
+ods html body="E:\Userdata\samuel_li\compMIS_&yymm._history.xls";
+
+
+/*** Borrower Type ***/
+%macro pt(zz,aa,bb,cc);
+proc summary data=mtg missing;
+where &aa.="&bb.";
+class &zz.;
+var os del30_ind Del30 del90_ind Del90 npl_ind NPL;
+output out=tmp sum=;
+run;
+
+data a;
+z='xxx';
+a='Company Name';
+b='Individual Name';
+run;
+proc transpose data=a out=b(keep=col1 rename=(col1=&zz.));
+by z;
+var a--b;
+run;
+data tmp;
+merge b tmp;
+by &zz.;
+if &zz.=' ' then &zz.='zALL';
+run;
+
+proc sort data=tmp;
+by &zz.;
+proc print data=tmp noobs;
+var &zz. _freq_ os;
+title "OS : &cc.";
+run;
+proc print data=tmp noobs;
+var &zz. del30_ind Del30;
+title "Delq30+ : &cc.";
+run;
+proc print data=tmp noobs;
+var &zz. del90_ind Del90;
+title "Delq90+ : &cc.";
+run;
+%mend pt;
+%pt(borrower,gp_h1,1.rml-con,Conventional RML portfolio @&yymm.)
+%pt(borrower,gp_h1,2.rml-rbp,RBP RML portfolio @&yymm.)
+%pt(borrower,gp_h1,3.non-rml,Non-RML portfolio @&yymm.)
+
+
+/*** Drawn Date ***/
+%macro pt(zz,aa,bb,cc);
+proc summary data=mtg missing;
+where &aa.="&bb.";
+class &zz.;
+var os del30_ind Del30 del90_ind Del90 npl_ind NPL;
+output out=tmp sum=;
+run;
+
+data a;
+z='xxx';
+a='1996 or before';
+b='1997';
+c='1998';
+d='1999';
+e='2000';
+f='2001';
+g='2002';
+h='2003';
+i='2004';
+j='2005';
+k='2006';
+l='2007';
+m='2008';
+n='2009';
+o='2010';
+p='2011';
+q='2012';
+r='2013';
+run;
+proc transpose data=a out=b(keep=col1 rename=(col1=&zz.));
+by z;
+var a--r;
+run;
+data tmp;
+merge b tmp;
+by &zz.;
+if &zz.=' ' then &zz.='zALL';
+run;
+
+proc sort data=tmp;
+by &zz.;
+proc print data=tmp noobs;
+var &zz. _freq_ os;
+title "OS : &cc.";
+run;
+proc print data=tmp noobs;
+var &zz. del30_ind Del30;
+title "Delq30+ : &cc.";
+run;
+proc print data=tmp noobs;
+var &zz. del90_ind Del90;
+title "Delq90+ : &cc.";
+run;
+%mend pt;
+%pt(my_draw,gp_h1,1.rml-con,Conventional RML portfolio @&yymm.)
+%pt(my_draw,gp_h1,2.rml-rbp,RBP RML portfolio @&yymm.)
+%pt(my_draw,gp_h1,3.non-rml,Non-RML portfolio @&yymm.)
+
+
+/*** Loan Type ***/
+%macro pt(zz,aa,bb,cc);
+proc summary data=mtg missing;
+where &aa.="&bb.";
+class &zz.;
+var os del30_ind Del30 del90_ind Del90 npl_ind NPL;
+output out=tmp sum=;
+run;
+
+data a;
+z='xxx';
+a='a.new purchase';
+b='b.refinance with cash';
+c='c.refinance without cash';
+d='d.Miss or NO MARS';
+run;
+proc transpose data=a out=b(keep=col1 rename=(col1=&zz.));
+by z;
+var a--d;
+run;
+data tmp;
+merge b tmp;
+by &zz.;
+if &zz.=' ' then &zz.='zALL';
+run;
+
+proc sort data=tmp;
+by &zz.;
+proc print data=tmp noobs;
+var &zz. _freq_ os;
+title "OS : &cc.";
+run;
+proc print data=tmp noobs;
+var &zz. del30_ind Del30;
+title "Delq30+ : &cc.";
+run;
+proc print data=tmp noobs;
+var &zz. del90_ind Del90;
+title "Delq90+ : &cc.";
+run;
+%mend pt;
+%pt(my_ltype,gp_h1,1.rml-con,Conventional RML portfolio @&yymm.)
+%pt(my_ltype,gp_h1,2.rml-rbp,RBP RML portfolio @&yymm.)
+%pt(my_ltype,gp_h1,3.non-rml,Non-RML portfolio @&yymm.)
+
+
+/*** Property Type ***/
+%macro pt(zz,aa,bb,cc);
+proc summary data=mtg missing;
+where &aa.="&bb.";
+class &zz.;
+var os del30_ind Del30 del90_ind Del90 npl_ind NPL;
+output out=tmp sum=;
+run;
+
+data a;
+z='xxx';
+a='a.Village House';
+b='b.Residential';
+c='c.Res+Car Park';
+d='d.Car Park';
+e='e.Commericial';
+f='f.Industrial';
+run;
+proc transpose data=a out=b(keep=col1 rename=(col1=&zz.));
+by z;
+var a--f;
+run;
+data tmp;
+merge b tmp;
+by &zz.;
+if &zz.=' ' then &zz.='zALL';
+run;
+
+proc sort data=tmp;
+by &zz.;
+proc print data=tmp noobs;
+var &zz. _freq_ os;
+title "OS : &cc.";
+run;
+proc print data=tmp noobs;
+var &zz. del30_ind Del30;
+title "Delq30+ : &cc.";
+run;
+proc print data=tmp noobs;
+var &zz. del90_ind Del90;
+title "Delq90+ : &cc.";
+run;
+%mend pt;
+%pt(my_prop,gp_h2,1.rml-con,Conventional RML portfolio @&yymm.)
+%pt(my_prop,gp_h2,2.rml-rbp,RBP RML portfolio @&yymm.)
+
+
+/*** Pricing ***/
+%macro pt(zz,aa,bb,cc);
+proc summary data=mtg missing;
+where &aa.="&bb.";
+class &zz.;
+var os del30_ind Del30 del90_ind Del90 npl_ind NPL;
+output out=tmp sum=;
+run;
+
+data a;
+z='xxx';
+a='ha.<H+0.7';
+b='hb.>=H+0.7 to <=H+1';
+c='hc.>H+1';
+d='pa.Below P-3.00%';
+e='pb.P-3.00% -< P-2.75%';
+f='pc.P-2.75% -< P-2.50%';
+g='pd.P-2.50% -< P-2.25%';
+h='pe.P-2.25% -< P-2.00%';
+i='pf.P-2.00% -< P-1.00%';
+j='pg.P-1.00% -< Prime Flat';
+k='ph.Prime or Above';
+l='x.non prime/hibor';
+run;
+proc transpose data=a out=b(keep=col1 rename=(col1=&zz.));
+by z;
+var a--l;
+run;
+data tmp;
+merge b tmp;
+by &zz.;
+if &zz.=' ' then &zz.='zALL';
+run;
+
+proc sort data=tmp;
+by &zz.;
+proc print data=tmp noobs;
+var &zz. _freq_ os;
+title "OS : &cc.";
+run;
+proc print data=tmp noobs;
+var &zz. del30_ind Del30;
+title "Delq30+ : &cc.";
+run;
+proc print data=tmp noobs;
+var &zz. del90_ind Del90;
+title "Delq90+ : &cc.";
+run;
+%mend pt;
+%pt(my_price,gp_h1,1.rml-con,Conventional RML portfolio @&yymm.)
+%pt(my_price,gp_h1,2.rml-rbp,RBP RML portfolio @&yymm.)
+%pt(my_price,gp_h1,3.non-rml,Non-RML portfolio @&yymm.)
+
+ods html close;
